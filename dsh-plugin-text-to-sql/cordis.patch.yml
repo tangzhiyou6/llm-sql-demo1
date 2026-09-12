@@ -1,0 +1,3 @@
+- insert:
+    - id: plugin-text-to-sql
+      name: dsh-plugin-text-to-sql

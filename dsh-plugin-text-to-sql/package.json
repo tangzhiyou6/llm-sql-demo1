@@ -1,0 +1,20 @@
+{
+  "name": "dsh-plugin-text-to-sql",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness custom plugin for Enterprise Text-to-SQL",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "text-to-sql"
+  ]
+}

@@ -146,24 +146,21 @@ python main.py --harness
 
 ## 五、 在 dsh (DeepSeek Harness CLI & Web UI) 中运行
 
-你系统上已安装官方的 DeepSeek Harness 命令行工具 `dsh`（`/Users/tangzhiyou/.local/state/fnm_multishells/10768_1789223774496/bin/dsh`）。我们已为你无缝适配了 **原生 Workspace Skill** 与 **标准 MCP Server** 两种运行方式：
+你系统上已安装官方的 DeepSeek Harness 命令行工具 `dsh`。我们已为你无缝开发并接入了 **dsh 原生自定义插件 (Plugin)** 与 **工作区技能 (Skill)**：
 
-### 方式 1：启动 dsh Web UI（自动挂载 Skill，开箱即用）
-本项目根目录下已配置好符合 `dsh` 规约的技能：[`.dsh/skills/text-to-sql/SKILL.md`](file:///Users/tangzhiyou/study-codes/llm-sql-demo1/.dsh/skills/text-to-sql/SKILL.md)。
+### 1. dsh 原生自定义插件：dsh-plugin-text-to-sql (已安装激活)
+本项目已封装完整的 Cordis 原生插件：[`dsh-plugin-text-to-sql/`](file:///Users/tangzhiyou/study-codes/llm-sql-demo1/dsh-plugin-text-to-sql/)，并已通过 `dsh plugin --profile web` 注册到你的 `dsh` 插件仓库与 profile 依赖中。
 
-只需在当前工程目录下启动：
-```bash
-dsh web
-```
-`dsh` 会自动通过 `@deepseek-ai/dsh-skill-filesystem` 扫描并加载当前工程的 `text-to-sql` 技能。在浏览器界面直接提问，Agent 将自动遵循两阶段蓝图规划、AST 改写与只读沙箱执行。
+* **插件包含的原生工具 (Native Tools)**：
+  - `text_to_sql`：端到端自然语言转 SQL 并执行（包含两阶段蓝图、AST 改写与沙箱执行）
+  - `execute_sql_in_sandbox`：只读沙箱执行器（强制 `SELECT`、超时截断、注入 `LIMIT 100`）
+  - `schema_search`：混合元数据检索
+  - `value_lookup`：高频枚举值精准对齐
+* **在 Web UI 验证插件**：
+  启动 `dsh web` 后，打开 **Settings (设置) -> Plugins (插件管理)**，你可以在插件列表中看到 `dsh-plugin-text-to-sql` 处于 **Active (已启用)** 状态！
 
-### 方式 2：通过 MCP (Model Context Protocol) 接入 dsh
-本项目提供了符合标准规范的 JSON-RPC 2.0 stdio MCP Server：[`mcp_server.py`](file:///Users/tangzhiyou/study-codes/llm-sql-demo1/mcp_server.py)，并配置了 [`.dsh/mcp.json`](file:///Users/tangzhiyou/study-codes/llm-sql-demo1/.dsh/mcp.json)。
+### 2. dsh 原生工作区技能：text-to-sql
+位于 [`.dsh/skills/text-to-sql/SKILL.md`](file:///Users/tangzhiyou/study-codes/llm-sql-demo1/.dsh/skills/text-to-sql/SKILL.md)，为 Agent 提供两阶段编排、AST 改写规则和表结构上下文。
 
-你可以在 `dsh`、Claude Desktop 或任何 MCP 客户端中直接连接该服务器，所有 5 个自定义 DB Tools 将直接作为原生工具被模型调用：
-```bash
-# 测试 MCP 服务是否正常
-echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | .venv/bin/python mcp_server.py
-```
 
 
