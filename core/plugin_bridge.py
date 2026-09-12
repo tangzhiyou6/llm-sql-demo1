@@ -73,7 +73,8 @@ def handle_tool_call(tool_name: str, args: dict) -> dict:
 
     elif tool_name == "value_lookup":
         term = args.get("search_term", "")
-        matches = val_lookup.search_query(term, top_k=3)
+        top_k = args.get("top_k", 5)
+        matches = val_lookup.search_query(term, top_k=top_k)
         return {
             "matches": [m.model_dump() for m in matches]
         }

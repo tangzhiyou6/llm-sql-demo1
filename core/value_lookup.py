@@ -100,6 +100,12 @@ class ValueLookupEngine:
                 if key not in scored_matches or scored_matches[key] < score:
                     scored_matches[key] = score
                     match_terms[key] = str_val
+            # Query is contained in DB value (e.g. query has "果汁", DB value is "100%纯果汁")
+            elif len(query_lower) >= 2 and query_lower in val_lower:
+                score = round(0.85 + (len(query_lower) / len(val_lower)) * 0.1, 3)
+                if key not in scored_matches or scored_matches[key] < score:
+                    scored_matches[key] = score
+                    match_terms[key] = query_lower
             # Part of DB value is mentioned (e.g. query mentions "果汁", DB value is "100%纯果汁")
             else:
                 # Check character bigrams overlap
