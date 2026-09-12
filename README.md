@@ -142,3 +142,28 @@ python main.py --harness
 ```
 进入交互会话后，模型将在 Harness 的驱动下自主调用探索工具、生成蓝图、提交只读沙箱执行，并在出错时触发 DeepSeek-R1 深度自纠错。
 
+---
+
+## 五、 在 dsh (DeepSeek Harness CLI & Web UI) 中运行
+
+你系统上已安装官方的 DeepSeek Harness 命令行工具 `dsh`（`/Users/tangzhiyou/.local/state/fnm_multishells/10768_1789223774496/bin/dsh`）。我们已为你无缝适配了 **原生 Workspace Skill** 与 **标准 MCP Server** 两种运行方式：
+
+### 方式 1：启动 dsh Web UI（自动挂载 Skill，开箱即用）
+本项目根目录下已配置好符合 `dsh` 规约的技能：[`.dsh/skills/text-to-sql/SKILL.md`](file:///Users/tangzhiyou/study-codes/llm-sql-demo1/.dsh/skills/text-to-sql/SKILL.md)。
+
+只需在当前工程目录下启动：
+```bash
+dsh web
+```
+`dsh` 会自动通过 `@deepseek-ai/dsh-skill-filesystem` 扫描并加载当前工程的 `text-to-sql` 技能。在浏览器界面直接提问，Agent 将自动遵循两阶段蓝图规划、AST 改写与只读沙箱执行。
+
+### 方式 2：通过 MCP (Model Context Protocol) 接入 dsh
+本项目提供了符合标准规范的 JSON-RPC 2.0 stdio MCP Server：[`mcp_server.py`](file:///Users/tangzhiyou/study-codes/llm-sql-demo1/mcp_server.py)，并配置了 [`.dsh/mcp.json`](file:///Users/tangzhiyou/study-codes/llm-sql-demo1/.dsh/mcp.json)。
+
+你可以在 `dsh`、Claude Desktop 或任何 MCP 客户端中直接连接该服务器，所有 5 个自定义 DB Tools 将直接作为原生工具被模型调用：
+```bash
+# 测试 MCP 服务是否正常
+echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | .venv/bin/python mcp_server.py
+```
+
+
