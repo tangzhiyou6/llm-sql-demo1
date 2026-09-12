@@ -161,9 +161,10 @@ class Phase2Generator:
         return current_sql, rewritten_sql or current_sql, final_exec_res, healing_history
 
     def _extract_sql(self, text: str) -> str:
-        """Extracts SQL string from markdown fences or raw response."""
-        match = re.search(r"```(?:sql)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+        """Extracts SQL string from markdown fences or raw response, stripping any <think> tags."""
+        clean = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+        match = re.search(r"```(?:sql)?\s*([\s\S]*?)\s*```", clean, re.IGNORECASE)
         if match:
             return match.group(1).strip()
         # If no code block, return stripped text
-        return text.strip()
+        return clean.strip()

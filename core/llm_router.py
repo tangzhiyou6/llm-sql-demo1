@@ -10,7 +10,7 @@ class LLMResponse(BaseModel):
     content: str
     model: str
     latency_ms: float
-    usage: Dict[str, int] = Field(default_factory=dict)
+    usage: Dict[str, Any] = Field(default_factory=dict)
     thinking_cot: Optional[str] = None
 
 

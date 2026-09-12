@@ -90,14 +90,14 @@ class Phase1Planner:
     ) -> ReasoningBlueprint:
         """Parses model response into validated ReasoningBlueprint with fallback defaults."""
         try:
-            # Extract JSON block if wrapped in markdown
-            json_str = raw_content.strip()
-            if "```json" in json_str:
-                json_str = json_str.split("```json")[1].split("```")[0].strip()
-            elif "```" in json_str:
-                json_str = json_str.split("```")[1].split("```")[0].strip()
+            clean = re.sub(r"<think>[\s\S]*?</think>", "", raw_content).strip()
+            match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", clean, re.IGNORECASE)
+            if match:
+                json_str = match.group(1).strip()
+            else:
+                json_match = re.search(r"\{[\s\S]*\}", clean)
+                json_str = json_match.group(0).strip() if json_match else clean
 
-            # Attempt JSON parse
             data = json.loads(json_str)
             return ReasoningBlueprint(**data)
         except Exception:
