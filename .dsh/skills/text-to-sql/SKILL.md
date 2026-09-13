@@ -1,66 +1,78 @@
 ---
 name: text-to-sql
-description: Enterprise-grade Text-to-SQL workflow using two-phase Plan-then-Solve, AST safety guardrails, hybrid metadata retrieval, and read-only database sandbox.
+description: Enterprise-grade Text-to-SQL workflow using two-phase Plan-then-Solve, AST safety guardrails, hybrid metadata retrieval, read-only database sandbox, Execution Consensus (P1), ExplainGuard (P2), and Semantic Metric Layer (P3).
 whenToUse: Use whenever the user asks questions about business data, sales, orders, customers, products, or requires generating and verifying database SQL queries.
 ---
 
 # Enterprise Text-to-SQL Skill for DeepSeek Harness (dsh)
 
-This skill provides an industrial-grade Text-to-SQL architecture that eliminates hallucinations, prevents ReAct infinite loops, caps output rows, and isolates database execution in a hardened read-only environment.
+This skill provides an industrial-grade Text-to-SQL architecture that eliminates hallucinations, prevents ReAct infinite loops, caps output rows, intercepts Cartesian products, and isolates database execution in a hardened read-only environment.
 
 ## 1. Quick Execution via dsh / CLI
 
-When you need to answer a natural language question or execute a Text-to-SQL task, run the runner in your terminal:
-
+### Standard Text-to-SQL Pipeline:
 ```bash
-.venv/bin/python harness_runner.py --query "<User Question>"
+.venv/bin/python main.py --query "<User Question>"
 ```
 
-Or run via the main CLI:
+### P1: Multi-Candidate Execution Consensus & Result Clustering:
 ```bash
-.venv/bin/python main.py --harness --query "<User Question>"
+.venv/bin/python main.py --query "<User Question>" --consensus
 ```
 
-For benchmark evaluation across 15 stratified Golden cases (EX / SR / ERR / Latency):
+### P2: Cost-Based ExplainGuard Pre-Filter Analysis:
+```bash
+.venv/bin/python main.py --explain "SELECT * FROM customers, orders"
+```
+
+### P3: Deterministic Semantic Metric Layer Query:
+```bash
+.venv/bin/python main.py --semantic --metrics total_revenue,order_count --dimensions city
+```
+
+### Benchmark Suite (15 Golden Cases):
 ```bash
 .venv/bin/python main.py --benchmark
 ```
 
+### Node.js Custom Plugin Verification:
+```bash
+node test_plugin.js
+```
+
 ---
 
-## 2. Core Architecture & Workflow Rules
+## 2. Advanced Architecture Enhancements (P0 ~ P3)
 
-When planning or generating SQL, strictly adhere to the **Two-Phase Constrained Workflow**:
+### P0: Persistent Daemon & Sub-Millisecond Tool Calling
+- The DSH plugin maintains a long-lived persistent JSON-RPC stdio daemon (`mcp_server.py`), eliminating per-call Python cold starts (~300ms) down to **< 1ms**.
+
+### P1: Execution Consensus & Clustering Engine (`core/consensus_engine.py`)
+- Generates $N$ diverse SQL candidates using temperature sampling and prompt variations.
+- Normalizes rows (float precision rounding, NULL mapping, deterministic sorting) and clusters candidates by exact execution result set equivalence.
+- Majority voting selects the winning canonical SQL and reports confidence.
+
+### P2: Cost-Based Pre-Filter (`core/explain_guard.py`)
+- Intercepts dangerous SQL before execution using `EXPLAIN QUERY PLAN`.
+- Detects and blocks Cartesian Products (multiple unindexed `SCAN` loops) with clear actionable diagnostic errors (`CRITICAL`).
+- Emits advisory warnings for unindexed scans or temporary B-tree allocations.
+
+### P3: Semantic Metric Layer Compiler (`core/semantic_layer.py`)
+- Declarative semantic modeling of business metrics (`total_revenue`, `order_count`, `avg_order_value`, `total_units_sold`) and dimensions (`city`, `product_name`, `order_status`).
+- Automatic topology graph BFS traversal resolves minimal join paths (e.g. `order_items` $\to$ `orders` $\to$ `customers`) with **zero join hallucination**.
+
+---
+
+## 3. Two-Phase Constrained Workflow Rules
 
 ### Phase 1: Read-Only Exploration & Reasoning Blueprint
-1. **Schema Retrieval**: Do not guess tables or columns. Inspect metadata using `schema_search` or run Level 1/2 hybrid retrieval.
-2. **Entity & Enum Alignment**: Always use `value_lookup` to check actual values (e.g., query mentions "果汁" $\to$ align to `'100%纯果汁'`; "已支付" $\to$ `'PAID'`).
-3. **Mandatory Output**: Formulate a structured **Reasoning Blueprint** containing:
-   - `selected_tables`: exact table names (e.g. `['orders', 'customers']`)
-   - `join_paths`: verified foreign keys (e.g. `orders.customer_id = customers.id`)
-   - `filter_conditions`: exact literal predicates (e.g. `orders.status = 'PAID'`)
-   - `ordering_and_limit`: standard ordering and limits.
-4. **Hard Guardrail**: **NEVER write or execute complex SQL in Phase 1.**
+1. **Schema Retrieval**: Inspect metadata using `schema_search` or hybrid retrieval.
+2. **Entity & Enum Alignment**: Use `value_lookup` to check actual values (e.g. "果汁" $\to$ `'100%纯果汁'`).
+3. **Mandatory Output**: Formulate a structured Reasoning Blueprint (`selected_tables`, `join_paths`, `filter_conditions`).
+4. **Hard Guardrail**: NEVER write or execute complex SQL in Phase 1.
 
-### Phase 2: Code Generation, AST Guard & Sandbox Execution
-1. **SQL Generation**: Generate standard SQL strictly according to the approved Blueprint.
-2. **AST Guardian (`sqlglot`)**:
-   - Only `SELECT` statements are permitted (`DROP`, `UPDATE`, `DELETE`, `ALTER` are blocked).
-   - Dynamic Rewrite: An outer `LIMIT 100` clause is automatically injected or capped.
-   - Table and column references are validated against the schema whitelist.
-3. **Hardened DB Sandbox**:
-   - Connection is strictly read-only (`mode=ro`).
-   - Hard execution timeout is enforced (5.0s) to prevent full table scans from hanging.
-4. **Bounded Self-Healing**:
-   - If AST validation fails or execution throws an error, inspect the precise line/column error or database message.
-   - Self-healing is strictly capped at **2~3 rounds maximum** to prevent infinite loops and token explosion.
-
----
-
-## 3. Database Schema Overview (`ecommerce.db`)
-
-- **`customers`**: `id` (PK), `name`, `city`, `email`, `created_at`
-- **`products`**: `id` (PK), `product_name`, `category`, `price`, `stock`
-- **`orders`**: `id` (PK), `customer_id` (FK $\to$ `customers.id`), `order_date`, `status`, `total_amount`
-- **`order_items`**: `id` (PK), `order_id` (FK $\to$ `orders.id`), `product_id` (FK $\to$ `products.id`), `quantity`, `unit_price`
-- **`customer_reviews`**: `id` (PK), `customer_id` (FK $\to$ `customers.id`), `product_id` (FK $\to$ `products.id`), `rating`, `comment`, `review_date`
+### Phase 2: Generation, AST Guard, Cost Pre-filter & Execution
+1. **AST Guardian (`sqlglot`)**: Only `SELECT` statements are permitted. Limits are dynamically injected or capped (`LIMIT 100`).
+2. **ExplainGuard Pre-filter**: Verifies query plan before running; rejects Cartesian explosions.
+3. **Hardened Read-Only Sandbox**: Strictly read-only connection (`mode=ro`) with hard 5-second timeout.
+4. **Bounded Self-Healing**: Self-healing reflection capped at 2~3 rounds max.

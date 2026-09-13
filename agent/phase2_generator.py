@@ -44,6 +44,35 @@ class Phase2Generator:
         self.router = router
         self.max_healing_rounds = max_healing_rounds
 
+    def generate_candidate_sql(
+        self,
+        blueprint: ReasoningBlueprint,
+        schema_str: str,
+        temperature: float = 0.0,
+        **kwargs
+    ) -> str:
+        """Generates a candidate SQL query from blueprint with specified temperature."""
+        prompt = (
+            f"Reasoning Blueprint:\n"
+            f"- Intent: {blueprint.user_intent}\n"
+            f"- Tables: {blueprint.selected_tables}\n"
+            f"- Join Paths: {blueprint.join_paths}\n"
+            f"- Filters: {blueprint.filter_conditions}\n"
+            f"- Aggregations: {blueprint.aggregations}\n"
+            f"- Ordering/Limit: {blueprint.ordering_and_limit}\n"
+            f"- Reasoning: {blueprint.reasoning_summary}\n\n"
+            f"{schema_str}\n\n"
+            f"Generate the standard SQL query matching this blueprint."
+        )
+        resp = self.router.call_fast_model(
+            system_prompt=SYSTEM_PROMPT_GENERATOR,
+            user_prompt=prompt,
+            temperature=temperature
+        )
+        return self._extract_sql(resp.content)
+
+    _generate_candidate_sql = generate_candidate_sql
+
     def generate_and_execute(
         self,
         blueprint: ReasoningBlueprint,
@@ -65,25 +94,8 @@ class Phase2Generator:
         healing_history: List[SelfHealingRound] = []
 
         # 1. Round 0: Initial SQL generation
-        initial_prompt = (
-            f"Reasoning Blueprint:\n"
-            f"- Intent: {blueprint.user_intent}\n"
-            f"- Tables: {blueprint.selected_tables}\n"
-            f"- Join Paths: {blueprint.join_paths}\n"
-            f"- Filters: {blueprint.filter_conditions}\n"
-            f"- Aggregations: {blueprint.aggregations}\n"
-            f"- Ordering/Limit: {blueprint.ordering_and_limit}\n"
-            f"- Reasoning: {blueprint.reasoning_summary}\n\n"
-            f"{schema_str}\n\n"
-            f"Generate the standard SQL query matching this blueprint."
-        )
-
-        resp = self.router.call_fast_model(
-            system_prompt=SYSTEM_PROMPT_GENERATOR,
-            user_prompt=initial_prompt
-        )
-        current_sql = self._extract_sql(resp.content)
-        current_model = resp.model
+        current_sql = self.generate_candidate_sql(blueprint, schema_str, temperature=0.0)
+        current_model = self.router.fast_model
 
         # 2. Execution & Self-Healing Loop
         for round_idx in range(self.max_healing_rounds + 1):

@@ -85,6 +85,11 @@ def display_pipeline_result(result, val_lookup, user_query):
 def main():
     parser = argparse.ArgumentParser(description="Enterprise Text-to-SQL Execution Engine")
     parser.add_argument("--query", "-q", type=str, help="Single natural language query to process")
+    parser.add_argument("--consensus", "-c", action="store_true", help="Enable Execution Consensus clustering across candidate queries (P1)")
+    parser.add_argument("--explain", type=str, help="Run Cost-Based ExplainGuard pre-filter analysis on given SQL (P2)")
+    parser.add_argument("--semantic", action="store_true", help="Run query through Semantic Metric Layer Compiler (P3)")
+    parser.add_argument("--metrics", type=str, default="total_revenue", help="Comma-separated metric names for semantic query")
+    parser.add_argument("--dimensions", type=str, default="city", help="Comma-separated dimension names for semantic query")
     parser.add_argument("--benchmark", "-b", action="store_true", help="Run the golden evaluation benchmark suite")
     parser.add_argument("--init-db", action="store_true", help="Initialize and re-seed the sample database")
     parser.add_argument("--harness", action="store_true", help="Run via DeepSeek Agent Tool-Calling Harness")
@@ -105,9 +110,60 @@ def main():
         return
 
     # Setup core services
+    from core.explain_guard import ExplainGuard
+    from core.semantic_layer import get_default_ecommerce_catalog, SemanticCompiler, SemanticQuery, DimensionFilter
+
+    explain_guard = ExplainGuard(block_on_critical=True)
     retriever, val_lookup = setup_metadata_and_valuelookup(db_path)
-    sandbox = DBSandbox(db_path=db_path, timeout_seconds=config.STATEMENT_TIMEOUT_SECONDS)
+    sandbox = DBSandbox(db_path=db_path, timeout_seconds=config.STATEMENT_TIMEOUT_SECONDS, explain_guard=explain_guard)
     ast_guard = SQLASTGuard(default_limit=config.MAX_ROW_LIMIT, target_dialect=config.DIALECT)
+
+    # P2 Explain CLI
+    if args.explain:
+        conn = sandbox._get_readonly_connection()
+        try:
+            analysis = explain_guard.analyze_plan(conn, args.explain)
+            print("\n" + "=" * 70)
+            print(f"  EXPLAIN QUERY PLAN Analysis (P2 ExplainGuard)")
+            print("=" * 70)
+            print(f"  • SQL        : {args.explain}")
+            print(f"  • Risk Level : {analysis.risk_level.value}")
+            print(f"  • Safe       : {analysis.is_safe}")
+            if analysis.has_cartesian_product:
+                print(f"  • Cartesian  : DETECTED on {analysis.cartesian_tables}")
+            if analysis.error_message:
+                print(f"  • Error      : {analysis.error_message}")
+            if analysis.warnings:
+                print(f"  • Warnings   : {analysis.warnings}")
+            print("\n  • Plan Nodes :")
+            for node in analysis.plan_nodes:
+                print(f"    [{node.id}] (parent={node.parent}) {node.detail}")
+            print("=" * 70 + "\n")
+            return
+        finally:
+            conn.close()
+
+    # P3 Semantic Query CLI
+    if args.semantic:
+        catalog = get_default_ecommerce_catalog()
+        compiler = SemanticCompiler(catalog)
+        m_list = [m.strip() for m in args.metrics.split(",") if m.strip()]
+        d_list = [d.strip() for d in args.dimensions.split(",") if d.strip()]
+        q = SemanticQuery(metrics=m_list, dimensions=d_list, limit=10)
+        compiled_sql = compiler.compile(q)
+        print("\n" + "=" * 70)
+        print("  Semantic Metric Layer Compilation (P3)")
+        print("=" * 70)
+        print(f"  • Requested Metrics   : {m_list}")
+        print(f"  • Requested Dimensions: {d_list}")
+        print(f"\n  • Compiled SQL:\n{compiled_sql}\n")
+        exec_res = sandbox.execute_query(compiled_sql)
+        print(f"  • Execution Result    : {'SUCCESS' if exec_res.success else 'FAILED'} ({exec_res.row_count} rows)")
+        print(f"  • Columns             : {exec_res.columns}")
+        for r in exec_res.rows[:5]:
+            print(f"    {r}")
+        print("=" * 70 + "\n")
+        return
 
     if args.harness:
         from core.deepseek_harness import DeepSeekHarness
@@ -129,8 +185,11 @@ def main():
     )
 
     if args.query:
-        result = pipeline.run(args.query)
+        result = pipeline.run(args.query, use_consensus=args.consensus)
         display_pipeline_result(result, val_lookup, args.query)
+        if result.consensus_result:
+            cr = result.consensus_result
+            print(f"[Consensus Details]: Total Candidates = {cr.total_candidates} | Valid = {cr.valid_candidates} | Confidence = {cr.confidence * 100:.1f}%")
         return
 
     # Interactive CLI Mode

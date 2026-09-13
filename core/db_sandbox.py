@@ -6,6 +6,9 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 
+from core.explain_guard import ExplainGuard, PlanAnalysisResult, RiskLevel
+
+
 class ExecutionResult(BaseModel):
     """Execution result returned by DBSandbox."""
     success: bool
@@ -15,6 +18,7 @@ class ExecutionResult(BaseModel):
     execution_time_ms: float = 0.0
     error: Optional[str] = None
     is_empty: bool = False
+    plan_analysis: Optional[PlanAnalysisResult] = None
 
 
 class TableColumnInfo(BaseModel):
@@ -41,9 +45,17 @@ class DBSandbox:
       4. Safe query execution with metrics (latency, row count, error capturing)
     """
 
-    def __init__(self, db_path: str, timeout_seconds: float = 5.0):
+    def __init__(
+        self,
+        db_path: str,
+        timeout_seconds: float = 5.0,
+        explain_guard: Optional[ExplainGuard] = None,
+        enforce_explain: bool = True
+    ):
         self.db_path = Path(db_path).resolve()
         self.timeout_seconds = timeout_seconds
+        self.explain_guard = explain_guard or ExplainGuard()
+        self.enforce_explain = enforce_explain
 
     def _get_readonly_connection(self) -> sqlite3.Connection:
         """Opens a strictly read-only SQLite connection using URI mode=ro."""
@@ -54,15 +66,28 @@ class DBSandbox:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def execute_query(self, sql_str: str) -> ExecutionResult:
+    def execute_query(self, sql_str: str, check_explain: bool = True) -> ExecutionResult:
         """
-        Executes SQL query in sandbox with strict timeout and read-only isolation.
+        Executes SQL query in sandbox with strict timeout, read-only isolation, and ExplainGuard pre-filtering.
         """
         start_time = time.perf_counter()
         conn = None
         timer = None
         try:
             conn = self._get_readonly_connection()
+
+            # Cost-based pre-filter: inspect query plan before running execution
+            plan_analysis = None
+            if self.enforce_explain and check_explain:
+                plan_analysis = self.explain_guard.analyze_plan(conn, sql_str)
+                if not plan_analysis.is_safe:
+                    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                    return ExecutionResult(
+                        success=False,
+                        execution_time_ms=round(elapsed_ms, 2),
+                        error=f"Cost Pre-Filter Intercepted: {plan_analysis.error_message}",
+                        plan_analysis=plan_analysis
+                    )
 
             # Set up hard execution timeout
             timed_out = [False]
@@ -91,7 +116,8 @@ class DBSandbox:
                 rows=rows,
                 row_count=len(rows),
                 execution_time_ms=round(elapsed_ms, 2),
-                is_empty=(len(rows) == 0)
+                is_empty=(len(rows) == 0),
+                plan_analysis=plan_analysis
             )
         except sqlite3.OperationalError as e:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0

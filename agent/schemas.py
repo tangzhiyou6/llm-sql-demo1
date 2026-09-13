@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from core.db_sandbox import ExecutionResult
+from core.consensus_engine import ConsensusResult
 
 
 class ReasoningBlueprint(BaseModel):
@@ -36,3 +37,4 @@ class PipelineResult(BaseModel):
     success: bool = False
     total_latency_ms: float = 0.0
     models_used: List[str] = Field(default_factory=list)
+    consensus_result: Optional[ConsensusResult] = None

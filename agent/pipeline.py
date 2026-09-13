@@ -11,6 +11,9 @@ from agent.phase2_generator import Phase2Generator
 import config
 
 
+from core.consensus_engine import ExecutionConsensusEngine, ConsensusResult
+
+
 class Text2SQLPipeline:
     """
     End-to-End Enterprise Text-to-SQL Pipeline implementing:
@@ -18,6 +21,7 @@ class Text2SQLPipeline:
       2. Phase 1: Read-Only Exploration & Reasoning Blueprint (DeepSeek Dual-Model)
       3. Phase 2: SQL Generation, sqlglot AST Safety Check, Limit Rewriting
       4. Hardened Read-Only DB Sandbox Execution with bounded Self-Healing (<= 2-3 rounds)
+      5. Optional Execution Consensus (multi-candidate clustering & voting)
     """
 
     def __init__(
@@ -47,8 +51,17 @@ class Text2SQLPipeline:
             router=self.router,
             max_healing_rounds=max_healing_rounds
         )
+        self.consensus_engine = ExecutionConsensusEngine(
+            sandbox=self.sandbox,
+            ast_guard=self.ast_guard
+        )
 
-    def run(self, user_query: str) -> PipelineResult:
+    def run(
+        self,
+        user_query: str,
+        use_consensus: bool = False,
+        num_candidates: int = 3
+    ) -> PipelineResult:
         """Executes the two-phase pipeline on a user natural language query."""
         start_time = time.perf_counter()
         models_used = set()
@@ -56,12 +69,42 @@ class Text2SQLPipeline:
         # --- Phase 1: Read-Only Exploration & Blueprint Generation ---
         blueprint, schema_str, candidate_tables = self.phase1_planner.plan(user_query)
 
-        # --- Phase 2: Generation, AST Guard, and Self-Healing Execution ---
-        final_sql, rewritten_sql, exec_result, healing_history = self.phase2_generator.generate_and_execute(
-            blueprint=blueprint,
-            schema_str=schema_str,
-            candidate_tables=candidate_tables
-        )
+        consensus_result: Optional[ConsensusResult] = None
+        healing_history = []
+
+        if use_consensus:
+            # --- Optional Phase 2 Consensus Mode ---
+            candidate_sqls = []
+            temps = [0.0, 0.3, 0.7][:num_candidates]
+            for t in temps:
+                cand_sql = self.phase2_generator._generate_candidate_sql(
+                    blueprint=blueprint,
+                    schema_str=schema_str,
+                    candidate_tables=candidate_tables,
+                    temperature=t
+                )
+                models_used.add(self.router.fast_model)
+                candidate_sqls.append(cand_sql)
+
+            consensus_result = self.consensus_engine.evaluate_candidates(candidate_sqls)
+            if consensus_result.success and consensus_result.winning_sql:
+                final_sql = consensus_result.winning_sql
+                rewritten_sql = consensus_result.winning_rewritten_sql
+                exec_result = consensus_result.winning_result
+            else:
+                # Fallback to standard healing generator
+                final_sql, rewritten_sql, exec_result, healing_history = self.phase2_generator.generate_and_execute(
+                    blueprint=blueprint,
+                    schema_str=schema_str,
+                    candidate_tables=candidate_tables
+                )
+        else:
+            # --- Standard Phase 2: Generation, AST Guard, and Self-Healing Execution ---
+            final_sql, rewritten_sql, exec_result, healing_history = self.phase2_generator.generate_and_execute(
+                blueprint=blueprint,
+                schema_str=schema_str,
+                candidate_tables=candidate_tables
+            )
 
         for step in healing_history:
             models_used.add(step.model_used)
@@ -77,5 +120,7 @@ class Text2SQLPipeline:
             healing_history=healing_history,
             success=exec_result.success if exec_result else False,
             total_latency_ms=round(total_latency, 2),
-            models_used=list(models_used)
+            models_used=list(models_used),
+            consensus_result=consensus_result
         )
+
