@@ -29,18 +29,23 @@ class Text2SQLMCPServer:
     in memory for ultra-low latency (<5ms) tool execution over stdio.
     """
 
-    def __init__(self, db_path: str = config.DB_PATH):
-        self.db_path = db_path
-        if not Path(db_path).exists():
-            init_sample_database(db_path)
+    def __init__(self, db_path: Optional[str] = None):
+        target_path = db_path or config.DB_PATH
+        p = Path(target_path)
+        if not p.is_absolute():
+            p = (BASE_DIR / p).resolve()
+        self.db_path = str(p)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if not p.exists():
+            init_sample_database(self.db_path)
 
         # 1. Warm up retrieval & lookup
-        self.retriever, self.val_lookup = setup_metadata_and_valuelookup(db_path)
+        self.retriever, self.val_lookup = setup_metadata_and_valuelookup(self.db_path)
 
         # 2. Hardened guards & sandbox
         self.explain_guard = ExplainGuard(block_on_critical=True)
         self.sandbox = DBSandbox(
-            db_path=db_path,
+            db_path=self.db_path,
             timeout_seconds=config.STATEMENT_TIMEOUT_SECONDS,
             explain_guard=self.explain_guard,
             enforce_explain=True

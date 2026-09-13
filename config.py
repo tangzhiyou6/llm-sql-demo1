@@ -15,7 +15,12 @@ FAST_MODEL = os.getenv("FAST_MODEL", "deepseek-chat")
 REASONING_MODEL = os.getenv("REASONING_MODEL", "deepseek-reasoner")
 
 # Database Sandbox Configuration
-DB_PATH = os.getenv("DB_PATH", str(BASE_DIR / "ecommerce.db"))
+raw_db_path = os.getenv("DB_PATH", "ecommerce.db")
+_db_p = Path(raw_db_path)
+if not _db_p.is_absolute():
+    DB_PATH = str((BASE_DIR / _db_p).resolve())
+else:
+    DB_PATH = str(_db_p.resolve())
 STATEMENT_TIMEOUT_SECONDS = float(os.getenv("STATEMENT_TIMEOUT_SECONDS", "5.0"))
 MAX_ROW_LIMIT = int(os.getenv("MAX_ROW_LIMIT", "100"))
 

@@ -8,10 +8,14 @@ from core.value_lookup import ValueLookupEngine
 def init_sample_database(db_path: str) -> None:
     """Initializes a realistic e-commerce SQLite database with foreign keys and sample rows."""
     p = Path(db_path)
+    if not p.is_absolute():
+        from config import BASE_DIR
+        p = (BASE_DIR / p).resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
     if p.exists():
         p.unlink()
 
-    conn = sqlite3.connect(p)
+    conn = sqlite3.connect(str(p))
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON;")
 
